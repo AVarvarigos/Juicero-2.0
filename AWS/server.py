@@ -1,33 +1,55 @@
-from flask import Flask, request
-from flask_sqlalchemy import SQLAlchemy
+import paramiko
+import paho.mqtt.client as mqtt
+import ssl
+import paho.mqtt.publish as publish
 
-app = Flask(__name__)
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
-db = SQLAlchemy(app)
+def ssh_command(ip_address, username, private_key_path, command):
+    ssh = paramiko.SSHClient()
 
-class SensorData(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    flex_data = db.Column(db.Float, nullable=False)
-    magnetometer_data = db.Column(db.Float, nullable=False)
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-@app.route('/receive_data', methods=['POST'])
-def receive_data():
     try:
-        received_data = request.get_json()
+        private_key = paramiko.RSAKey.from_private_key_file(private_key_path)
 
-        flex_data = received_data.get('flex_data')
-        magnetometer_data = received_data.get('magnetometer_data')
+        ssh.connect(ip_address, username=username, pkey=private_key)
 
-        new_data = SensorData(flex_data=flex_data, magnetometer_data=magnetometer_data)
-        db.session.add(new_data)
-        db.session.commit()
+        stdin, stdout, stderr = ssh.exec_command(command)
 
-        return 'Data received and stored successfully', 200
-    except Exception as e:
-        print("Error processing data:", str(e))
-        return 'Error processing data', 500
+        output = stdout.read().decode()
 
-if __name__ == '__main__':
-    db.create_all()
-    app.run(host='0.0.0.0', port=5000)
+        print(output)
+
+        mqtt_publish(output)
+
+    except paramiko.AuthenticationException:
+        print("Authentication failed. Please check your username and private key.")
+    except paramiko.SSHException as e:
+        print(f"SSH connection failed: {e}")
+    finally:
+        ssh.close()
+
+def mqtt_publish(message):
+    broker_address = "35.176.230.101"
+    port = 1883
+    private_key_path = "HELPME.ppk"
+    client_id = "mqtt_client_id-1"
+
+    client = mqtt.Client(client_id=client_id)
+
+    client.tls_set(keyfile=private_key_path,  certfile=None, cert_reqs=ssl.CERT_NONE, tls_version=ssl.PROTOCOL_TLS)
+
+    try:
+        client.connect(broker_address, port)
+        message = "Hello, world!"
+        publish.single("ssh_output", message, hostname="35.176.230.101")
+        print(f"Failed to publish message to MQTT broker: {e}")
+    finally:
+        client.disconnect()
+
+ip_address = '35.176.230.101'
+username = 'ubuntu'
+private_key_path = 'HELPME.ppk'
+command = 'ls -l'  
+
+ssh_command(ip_address, username, private_key_path, command)
