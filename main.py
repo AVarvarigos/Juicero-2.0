@@ -1,4 +1,5 @@
-import time
+
+import time #ADDESSES OF TOF NOT VOTTRVT FIXED FIRST NEED TO CONNECT 2ND FIRST TO FIX ADDRESS
 
 # Import the ADS1x15 module.
 import Adafruit_ADS1x15
@@ -16,7 +17,7 @@ import RPi.GPIO as GPIO
 # Create an ADS1115 ADC (16-bit) instance.
 adc = Adafruit_ADS1x15.ADS1115()  
 
-sensor1_shutdown = 4
+sensor1_shutdown = 17
 sensor2_shutdown = 18
 
 GPIO.setwarnings(False)
@@ -33,10 +34,10 @@ GPIO.output(sensor2_shutdown, GPIO.LOW)
 # Create one object per VL53L0X passing the address to give to
 # each. TOF CAN HAVE AS MANY ADDRESSES AS POSSIBLE AND AS MANY TOF DEVICES AS POSSIBLE.
 #Set address of each by using shutdown GPIO pins to shutdown all except desired TOF, alter its address, then repeat for other sensors (not effect by comm when at shutdown)
-tof = VL53L0X.VL53L0X(i2c_address=0x2B)
-tof1 = VL53L0X.VL53L0X(i2c_address=0x2D)
+tof = VL53L0X.VL53L0X(i2c_address=0x29)
+#tof1 = VL53L0X.VL53L0X(i2c_address=0x2D)
 tof.open()
-tof1.open()
+#tof1.open()
 
 time.sleep(0.50)
 
@@ -51,7 +52,7 @@ tof.start_ranging(VL53L0X.Vl53l0xAccuracyMode.BETTER) #IMPROVE ACCURACY MODE IF 
 # call to start ranging 
 GPIO.output(sensor2_shutdown, GPIO.HIGH)
 time.sleep(0.50)
-tof1.start_ranging(VL53L0X.Vl53l0xAccuracyMode.BETTER)
+#tof1.start_ranging(VL53L0X.Vl53l0xAccuracyMode.BETTER)
 
 timing = tof.get_timing() #how to alter it?
 if timing < 20000:
@@ -67,7 +68,7 @@ SAMPLER_BUFFER_LENGTH=100 #Optimize lengths to save space but should be large en
 ML_BUFFER_LENGTH=100
 FLEX_AMOUNT=4
 IR_AMOUNT=2
-GAIN = [1, 1, 1, 1] #INCREASE GAIN TO ALTER SENSITIVITY #FINISH CALIBRATION!
+GAIN = [2/3, 2/3, 2/3, 2/3] #INCREASE GAIN TO ALTER SENSITIVITY #FINISH CALIBRATION!
 
 #ML SETUP STATEMENTS GO HERE (Chang)
 #NETWORK LIBRARY SETUP STATEMENTS GO THERE (Anastasis)
@@ -115,7 +116,7 @@ while True: #CHANGE TO HAVE DEVICE START COLLECTING DATA WHEN SUCCESSFUL LOGIN I
 
     #SAMPLE TOF DATA IN MM
     distance[0] = tof.get_distance()
-    distance[1] = tof1.get_distance()
+    #distance[1] = tof1.get_distance()
     time.sleep(timing/1000000.00) #IMPROVE THAT? MAKE IT NONBLOCKING SOMEHOW AND LET ML DATA COLLECTOR WORK DURING THAT TIME
 
 
@@ -124,7 +125,7 @@ while True: #CHANGE TO HAVE DEVICE START COLLECTING DATA WHEN SUCCESSFUL LOGIN I
 
     # PRINT DATA FOR DEBUG PURPOSES BUT IN APPLICATION WE SAVE THEM TO BUFFER
     print('| {0:>6} | {1:>6} | {2:>6} | {3:>6} |'.format(*adc_values))
-    print('Distance 0: ' + distance[0] + 'Distance 1: ' + distance[1])
+    print('Distance 0: ' + str(distance[0]) + 'Distance 1: ' + str(distance[1]))
 
     if len(sampler_buffer)/(FLEX_AMOUNT + IR_AMOUNT +1) < SAMPLER_BUFFER_LENGTH:
         sampler_buffer=sampler_buffer + adc_values + distance + [-1] #-1 here to tell the end of packet
@@ -147,11 +148,11 @@ while True: #CHANGE TO HAVE DEVICE START COLLECTING DATA WHEN SUCCESSFUL LOGIN I
 #TO DO: Calibration, testing code, ADC I2C library, model training, haptic implementation
 
 
-'''
--Network in background if can make that: FIND LIBRARY THAT ALLOWS THAT
--If have time, sampling is in interrupt that will interfere with ML operation but will ensure fast and continuous data collection. CANNOT PARALLEL I2C COMMUNICATIONS BUT IMPROVE SOMEHOW??? (multiple I2C ports?)
--ML stuff will be in the main While(1) loop
-'''
+
+#-Network in background if can make that: FIND LIBRARY THAT ALLOWS THAT
+#-If have time, sampling is in interrupt that will interfere with ML operation but will ensure fast and continuous data collection. CANNOT PARALLEL I2C COMMUNICATIONS BUT IMPROVE SOMEHOW??? (multiple I2C ports?)
+#-ML stuff will be in the main While(1) loop
+
 
 
 
@@ -167,5 +168,3 @@ GPIO.output(sensor1_shutdown, GPIO.LOW)
 
 tof.close()
 tof1.close()
-
-    
