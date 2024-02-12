@@ -1,55 +1,62 @@
-import paramiko
-import paho.mqtt.client as mqtt
-import ssl
+"""
 import paho.mqtt.publish as publish
+import paho.mqtt.client as mqtt
+
+publish.single(topic="VirtualTopic.test", payload="boo", hostname="b-cbf779c1-9347-4967-9357-ccd4074f3fb0-1.mq.eu-west-2.amazonaws.com", client_id="spongo", port=8883, protocol=mqtt.MQTTv5)
+
+"""
+import paho.mqtt.client as mqtt
+import random
+import json
+import uuid
 
 
-def ssh_command(ip_address, username, private_key_path, command):
-    ssh = paramiko.SSHClient()
+def on_connect(mqttc, obj, flags, rc):
+    print("rc: " + str(rc))
 
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    try:
-        private_key = paramiko.RSAKey.from_private_key_file(private_key_path)
+def on_message(mqttc, obj, msg):
+    print(msg.topic + " " + str(msg.qos) + " " + str(msg.payload))
 
-        ssh.connect(ip_address, username=username, pkey=private_key)
 
-        stdin, stdout, stderr = ssh.exec_command(command)
+def on_publish(mqttc, obj, mid):
+    print("mid: " + str(mid))
+    pass
 
-        output = stdout.read().decode()
 
-        print(output)
+def on_subscribe(mqttc, obj, mid, granted_qos):
+    print("Subscribed: " + str(mid) + " " + str(granted_qos))
 
-        mqtt_publish(output)
 
-    except paramiko.AuthenticationException:
-        print("Authentication failed. Please check your username and private key.")
-    except paramiko.SSHException as e:
-        print(f"SSH connection failed: {e}")
-    finally:
-        ssh.close()
+def on_log(mqttc, obj, level, string):
+    print(string)
 
-def mqtt_publish(message):
-    broker_address = "35.176.230.101"
-    port = 1883
-    private_key_path = "HELPME.ppk"
-    client_id = "mqtt_client_id-1"
+hwaddr = uuid.getnode()
 
-    client = mqtt.Client(client_id=client_id)
 
-    client.tls_set(keyfile=private_key_path,  certfile=None, cert_reqs=ssl.CERT_NONE, tls_version=ssl.PROTOCOL_TLS)
+# If you want to use a specific client id, use
+# mqttc = mqtt.Client("client-id")
+# but note that the client id must be unique on the broker. Leaving the client
+# id parameter empty will generate a random id for you.
+mqttc = mqtt.Client(client_id="blahorh-"+str(hwaddr))
+mqttc.username_pw_set("lowuser", password="lowuser_lowpassword")
+mqttc.on_message = on_message
+mqttc.on_connect = on_connect
+mqttc.on_publish = on_publish
+mqttc.on_subscribe = on_subscribe
+# Uncomment to enable debug messages
+mqttc.on_log = on_log
+mqttc.tls_set()
+mqttc.tls_insecure_set(True)
+mqttc.connect("b-cbf779c1-9347-4967-9357-ccd4074f3fb0-1.mq.eu-west-2.amazonaws.com", 8883, 60)
 
-    try:
-        client.connect(broker_address, port)
-        message = "Hello, world!"
-        publish.single("ssh_output", message, hostname="35.176.230.101")
-        print(f"Failed to publish message to MQTT broker: {e}")
-    finally:
-        client.disconnect()
+mqttc.loop_start()
 
-ip_address = '35.176.230.101'
-username = 'ubuntu'
-private_key_path = 'HELPME.ppk'
-command = 'ls -l'  
+sensor_data = {
+    "posture_quality": 0.12,
+    "device_id": "chair-"+str(hwaddr)
+    }
 
-ssh_command(ip_address, username, private_key_path, command)
+infot = mqttc.publish("VirtualTopic/test", json.dumps(sensor_data), qos=2)
+
+infot.wait_for_publish()
