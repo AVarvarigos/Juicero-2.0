@@ -1,5 +1,5 @@
 /*******************************************************************************
-Copyright © 2016, STMicroelectronics International N.V.
+Copyright ï¿½ 2016, STMicroelectronics International N.V.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -175,7 +175,7 @@ typedef uint8_t VL53L0X_GpioFunctionality;
 
 #define VL53L0X_REG_ALGO_PART_TO_PART_RANGE_OFFSET_MM       0x0028
 
-#define VL53L0X_REG_I2C_SLAVE_DEVICE_ADDRESS                0x008a
+#define VL53L0X_REG_I2C_SLAVE_DEVICE_ADDRESS                0x008a //0x008a
 
 /* Check Limit registers */
 #define VL53L0X_REG_MSRC_CONFIG_CONTROL                     0x0060

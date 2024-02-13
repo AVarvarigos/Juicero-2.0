@@ -29,7 +29,7 @@ import VL53L0X
 print("start operation")
 
 # Create a VL53L0X object
-tof = VL53L0X.VL53L0X(i2c_bus=1,i2c_address=0x29)
+tof = VL53L0X.VL53L0X(i2c_bus=1,i2c_address=0x29) #29 is original address
 
 print("made object")
 

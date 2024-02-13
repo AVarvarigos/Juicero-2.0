@@ -26,8 +26,8 @@ import time
 import VL53L0X
 import RPi.GPIO as GPIO
 
-# GPIO for Sensor 1 shutdown pin
-sensor1_shutdown = 20
+# GPIO for Sensor 1 shutdown pin 20 original
+sensor1_shutdown = 17
 # GPIO for Sensor 2 shutdown pin
 sensor2_shutdown = 16
 
@@ -47,8 +47,8 @@ time.sleep(0.50)
 
 # Create one object per VL53L0X passing the address to give to
 # each.
-tof = VL53L0X.VL53L0X(i2c_address=0x2B)
-tof1 = VL53L0X.VL53L0X(i2c_address=0x2D)
+tof = VL53L0X.VL53L0X(i2c_address=0x29) #2B original address
+tof1 = VL53L0X.VL53L0X(i2c_address=0x2D) #2D original address
 tof.open()
 tof1.open()
 
