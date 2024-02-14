@@ -17,6 +17,36 @@ print("terminal works")
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #ADC has programmable digital comparator, AIN used to remove common mode. DOES SIGMA DELTA MODULATION
 
 #single-shot conversion mode: only convert when master demands it, continuous: convert again after conversion is done, rate is programmable
