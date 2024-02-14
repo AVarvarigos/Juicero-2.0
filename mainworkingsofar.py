@@ -347,15 +347,11 @@ def measurements():
         #-If have time, sampling is in interrupt that will interfere with ML operation but will ensure fast and continuous data collection. CANNOT PARALLEL I2C COMMUNICATIONS BUT IMPROVE SOMEHOW??? (multiple I2C ports?)
         #-ML stuff will be in the main While(1) loop 
     #What TOF does when program is terminated. How to add some sort of stop condition to ensure this is executed when operation is done. Look more into what these methods do!    
-print('tsaonima')
 publish_thread = threading.Thread(target = output, args = (model,))
 measurements_thread = threading.Thread(target = get_fake_datastream)
 
-print('dick')
 publish_thread.start()
-print('malaka')
 measurements_thread.start()
-print('pousth')
 
 publish_thread.join()
 measurements_thread.join()
