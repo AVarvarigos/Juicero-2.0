@@ -123,7 +123,8 @@ max_sit_time=-1 #represent time in minutes or hours? A way to ensure timer() won
 
 
 
-
+f = open("dataGet.txt", "a")
+f.write("\n===start===")
 
 print('Reading ADS1x15 and VL53L0X values, press Ctrl-C to quit...')
 # Print nice channel column headers.
@@ -143,10 +144,18 @@ distance=[0]*3
 
 #OPTIMIZE ADC DATA RATES AND TOF DATA COLLECTION MODES BASED ON TOMORROW'S TESTS
 
-
+counter = 0
 #LOOP(). Make this an interrupt or put with ML in series
 while True: #CHANGE TO HAVE DEVICE START COLLECTING DATA WHEN SUCCESSFUL LOGIN IS DONE ON THE WEBSITE AND THE DEVICE IS ACTIVATED
     # Read all the ADC channel values in a list.
+    
+    if (counter%50==0):
+        print("Data " + str(counter) + " input:")
+        spec = input()
+        counter = counter + 1
+    else:
+        counter = counter + 1
+
     for i in range(4):
 
         #SAMPLE ADC DATA
@@ -178,7 +187,8 @@ while True: #CHANGE TO HAVE DEVICE START COLLECTING DATA WHEN SUCCESSFUL LOGIN I
     # PRINT DATA FOR DEBUG PURPOSES BUT IN APPLICATION WE SAVE THEM TO BUFFER
     print('| {0:>6} | {1:>6} | {2:>6} | {3:>6} |'.format(*adc_values))
     print('Distance 0: ' + str(distance[0]) + ' Distance 1: ' + str(distance[1]) + ' Distance 2: ' + str(distance[2]))
-
+    if(spec != "p"):
+        f.write("\n"+"|"+str(distance[0])+"|"+str(distance[1])+"|"+str(distance[2])+"|"+str(spec)+"|")
     if len(sampler_buffer)/(FLEX_AMOUNT + IR_AMOUNT +1) < SAMPLER_BUFFER_LENGTH:
         sampler_buffer=sampler_buffer + adc_values + distance + [-1] #-1 here to tell the end of packet
 
