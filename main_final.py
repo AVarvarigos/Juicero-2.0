@@ -48,7 +48,7 @@ hwaddr = uuid.getnode()
 # mqttc = mqtt.Client("client-id")
 # but note that the client id must be unique on the broker. Leaving the client
 # id parameter empty will generate a random id for you.
-mqttc = mqtt.Client(client_id="blahorh-"+str(hwaddr))
+mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id="blahorh-"+str(hwaddr))
 mqttc.username_pw_set("lowuser", password="lowuser_lowpassword")
 mqttc.on_message = on_message
 mqttc.on_connect = on_connect
