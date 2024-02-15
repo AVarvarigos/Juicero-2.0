@@ -22,6 +22,12 @@ print("terminal works")
 
 
 
+#removed other child
+#changed from adafruit i2c to smbus2 direct for more control
+#add read then write
+#add auto gain adjuster??? (if have time, do after ideal operation calling)
+#activated RDY pin for safety and protection against overflow
+#NO CONTINUOUS AS THE SCHEME DEVISED HAS MORE SAMPLES TIME ALIGNED IF USE SINGLE SHOT (assume 33ms enough time for ADC to be done)
 
 
 
@@ -30,28 +36,8 @@ print("terminal works")
 
 
 
-# Copyright (c) 2016 Adafruit Industries
-# Author: Tony DiCola
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
 import time
-from .ADS1x15 import ADS1115, ADS1015 #Choose best one
+import smbus2
 
 
 # Register and other configuration values:
@@ -165,7 +151,7 @@ SO NOT POSSIBLE TO CONTINIOUSLY READ ALL 4 CHANNELS. HAVE TO CHANGE CONFIG TO CH
 '''
 
 
-class ADS1x15(object):
+class ADS1115(object):
     """Base functionality for ADS1x15 analog to digital converters."""
 
     def __init__(self, address=ADS1x15_DEFAULT_ADDRESS, i2c=None, **kwargs):
@@ -178,25 +164,21 @@ class ADS1x15(object):
         self._device = i2c.get_i2c_device(address, **kwargs)
 
     def _data_rate_default(self):
-        """Retrieve the default data rate for this ADC (in samples per second).
-        Should be implemented by subclasses.
-        """
-        raise NotImplementedError('Subclasses must implement _data_rate_default!')
+        return 128
 
     def _data_rate_config(self, data_rate):
-        """Subclasses should override this function and return a 16-bit value
-        that can be OR'ed with the config register to set the specified
-        data rate.  If a value of None is specified then a default data_rate
-        setting should be returned.  If an invalid or unsupported data_rate is
-        provided then an exception should be thrown.
-        """
-        raise NotImplementedError('Subclass must implement _data_rate_config function!')
+        if data_rate not in ADS1115_CONFIG_DR:
+            raise ValueError('Data rate must be one of: 8, 16, 32, 64, 128, 250, 475, 860')
+        return ADS1115_CONFIG_DR[data_rate]
 
     def _conversion_value(self, low, high):
-        """Subclasses should override this function that takes the low and high
-        byte of a conversion result and returns a signed integer value.
-        """
-        raise NotImplementedError('Subclass must implement _conversion_value function!')
+         #contacts the received MS byte and LS bytes to 16 bit number then make it signed by removing by subtraction 2*MSB
+        # Convert to 16-bit signed value.
+        value = ((high & 0xFF) << 8) | (low & 0xFF)
+        # Check for sign bit and turn into a negative value if set.
+        if value & 0x8000 != 0:
+            value -= 1 << 16
+        return value
 
 
     #DO CONFIGURATION AT THE STARTUP, REMOVE SLEEP, PUT CONVERSION RESULT TO SAME METHOD, REPLACE READLIST WITH SMBUS METHOD!!!
@@ -242,19 +224,6 @@ class ADS1x15(object):
         # Perform a single shot read and set the mux value to the channel plus
         # the highest bit (bit 3) set.
         return self._read(channel + 0x04, gain, data_rate, ADS1x15_CONFIG_MODE_SINGLE)
-
-    def read_adc_difference(self, differential, gain=1, data_rate=None): 
-        """Read the difference between two ADC channels and return the ADC value
-        as a signed integer result.  Differential must be one of:
-          - 0 = Channel 0 minus channel 1
-          - 1 = Channel 0 minus channel 3
-          - 2 = Channel 1 minus channel 3
-          - 3 = Channel 2 minus channel 3
-        """
-        assert 0 <= differential <= 3, 'Differential must be a value within 0-3!'
-        # Perform a single shot read using the provided differential value
-        # as the mux value (which will enable differential mode).
-        return self._read(differential, gain, data_rate, ADS1x15_CONFIG_MODE_SINGLE)
 
     def start_adc(self, channel, gain=1, data_rate=None): #do this to bypass read times and keep value ready at hand
         """Start continuous ADC conversions on the specified channel (0-3). Will
@@ -310,15 +279,6 @@ class ADS1115(ADS1x15):
     def __init__(self, *args, **kwargs):
         super(ADS1115, self).__init__(*args, **kwargs)
 
-    def _data_rate_default(self):
-        # Default from datasheet page 16, config register DR bit default.
-        return 128
-
-    def _data_rate_config(self, data_rate): #return the dr config bitstream needed for dr setting
-        if data_rate not in ADS1115_CONFIG_DR:
-            raise ValueError('Data rate must be one of: 8, 16, 32, 64, 128, 250, 475, 860')
-        return ADS1115_CONFIG_DR[data_rate]
-
     def _conversion_value(self, low, high): 
         #contacts the received MS byte and LS bytes to 16 bit number then make it signed by removing by subtraction 2*MSB
         # Convert to 16-bit signed value.
@@ -327,37 +287,6 @@ class ADS1115(ADS1x15):
         if value & 0x8000 != 0:
             value -= 1 << 16
         return value
-
-
-class ADS1015(ADS1x15):
-    """ADS1015 12-bit analog to digital converter instance."""
-
-    def __init__(self, *args, **kwargs):
-        super(ADS1015, self).__init__(*args, **kwargs)
-
-    def _data_rate_default(self):
-        # Default from datasheet page 19, config register DR bit default.
-        return 1600
-
-    def _data_rate_config(self, data_rate):
-        if data_rate not in ADS1015_CONFIG_DR:
-            raise ValueError('Data rate must be one of: 128, 250, 490, 920, 1600, 2400, 3300')
-        return ADS1015_CONFIG_DR[data_rate]
-
-    def _conversion_value(self, low, high):
-        # Convert to 12-bit signed value.
-        value = ((high & 0xFF) << 4) | ((low & 0xFF) >> 4)
-        # Check for sign bit and turn into a negative value if set.
-        if value & 0x800 != 0:
-            value -= 1 << 12
-        return value
-
-
-
-
-
-
-
 
 
 
