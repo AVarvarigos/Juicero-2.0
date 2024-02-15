@@ -83,12 +83,14 @@ def set_max_to_one(lst):
 
 #ML predict functions, to be called everytime inference needed.
 
-def IR_Model_Predict(model, height, IR_raw): 
-	### takes in the model, height(float) and raw data from ir(list of float),
+def IR_Model_Predict(model, height, sampler_buffer): 
+	### takes in the model, height(float) and sampler buffer,
 	### returns a tuple of Posture Score (float) and Identified Type (list of float, either 1 or 0, 1 indicating which type identified)
 	### types in order of typelist = ['Good', 'Lean Forward', 'Lying too low', 'Medium', 'Empty']
-
+	IR_raw = sampler_buffer[2:5]
+	IR_raw = [float(i) for i in IR_raw]
 	data = [height]+IR_raw
+	print(data)
 	Type, PostureScore = model(torch.tensor([normalize_Height(data[0]),normalize_IR(data[1]),normalize_IR(data[2]),normalize_IR(data[3])]))
 	Type = Type.tolist()
 	PostureScore = PostureScore.item()
@@ -102,15 +104,11 @@ def Flex_Model_Predict(model,sampler_buffer):
 	left = 0
 	right = 0
 	counter = 0
-	for first,second in zip(sampler_buffer[::8], sampler_buffer[1::8]):
-		counter = counter + 1
-		normalized_first, normalized_second = normalize_Flex(first, second)
-		left = left + normalized_first
-		right = right + normalized_second
-	left = left / counter
-	right = right / counter
-	logits = model(torch.tensor([left,right]).type(torch.float32))
+	first = sampler_buffer[0]
+	second = sampler_buffer[1]
+	normalized_first, normalized_second = normalize_Flex(first, second)
+	logits = model(torch.tensor([normalized_first,normalized_second]).type(torch.float32))
 	return logits
 
-print(IR_Model_Predict(BACKCipher, 188.0, [147.0, 34.0, 22.0]))
+print(IR_Model_Predict(BACKCipher, 188.0, [15111,15122,147, 34, 22,-1]))
 print(Flex_Model_Predict(ASSCipher,[15191,14053]))
