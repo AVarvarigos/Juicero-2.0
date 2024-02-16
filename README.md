@@ -1,6 +1,6 @@
 # Juicero-2.0
 
-##Team Members:
+## Team Members:
 
 Anastasios Romanos Varvarigos (EIE)
 Patrick Beart (EIE)
