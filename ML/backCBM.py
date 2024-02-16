@@ -30,15 +30,6 @@ if device.type == 'cuda':
 	print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
 	print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
 
-def softmax(z):
-	assert len(z.shape) == 2
-	s = np.max(z, axis=1)
-	s = s[:, np.newaxis] # necessary step to do broadcasting
-	e_x = np.exp(z - s)
-	div = np.sum(e_x, axis=1)
-	div = div[:, np.newaxis] # dito
-	return e_x / div
-
 class ASSDataset(Dataset):
 	def __init__(self, generated):
 		self.features = generated['features'][:]
@@ -64,6 +55,19 @@ class ASSDataset(Dataset):
 		# test,val = random_split(rest, [test_size, test_size])
 		return train,test,val
 
+class End2EndModel(torch.nn.Module):
+	def __init__(self, model1, model2):
+		super(End2EndModel, self).__init__()
+		self.first_model = model1#x to c
+		self.sec_model = model2 #c to y
+
+	def forward_stage2(self, c, x):
+		return c,self.sec_model(c)
+
+	def forward(self, x):
+		c = self.first_model(x)
+		return self.forward_stage2(c,x)
+
 class MLP(nn.Module):
 	def __init__(self, layer_sizes, activation=nn.ReLU, final_activation=None, lr=0.001):
 		super(MLP, self).__init__()
@@ -86,25 +90,35 @@ class MLP(nn.Module):
 	def forward(self, x):
 		return self.model.forward(x)
 
-def createASSDatasetFromCSV(assDatasetPath, baselineleft, baselineright):
+def XtoCtoY(n_features, n_concepts):
+
+	layer_sizes=[n_features, 128, n_concepts] #dummy sidechannels
+	x_to_c = MLP(layer_sizes, nn.ReLU, nn.Sigmoid)
+
+	layer_sizes=[n_concepts, 128, 1]
+	c_to_y = MLP(layer_sizes, nn.ReLU)
+
+	return End2EndModel(x_to_c, c_to_y)
+
+
+def createASSDatasetFromCSV(assDatasetPath):
 	ass = pd.read_csv(assDatasetPath)
 	feature_columns = [
-		'LEFT',    'RIGHT'
+		'Identifier',    'value1',    'value2',    'value3'
 	]
 	label_columns = [
-	'g'
+	'g', 'l', 's', 'm', 'e', 'Goodness'
 	]
-	features = ass[feature_columns].values.astype(np.float64)
+	features = ass[feature_columns].values
 	labels = ass[label_columns].values
-	features[:,0] = features[:,0]/baselineleft-1.
-	features[:,1] = features[:,1]/baselineright-1.
+
 	dataset = {}
 	dataset['features'] = features
 	dataset['labels'] = labels
 	return dataset
 
 
-def train(model, n_epoch, train_loader, lr, n_concepts, test_loader = None, criterion = torch.nn.BCELoss()):
+def train(model, n_epoch, train_loader, lr, n_concepts, test_loader = None, criterion_c = torch.nn.CrossEntropyLoss(), criterion_y = torch.nn.MSELoss()):
 	optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 	all_epoch = []
 	train_acc = []
@@ -134,19 +148,21 @@ def train(model, n_epoch, train_loader, lr, n_concepts, test_loader = None, crit
 			
 			optimizer.zero_grad()
 
-			outputs = model(inputs.reshape(inputs.size(0),2))
+			outputs,y = model(inputs.reshape(inputs.size(0),4))
 
-			loss = criterion(outputs,labels.reshape(labels.size(0),n_concepts))
+			loss = criterion_c(outputs,labels.reshape(labels.size(0),n_concepts+1)[:,0:n_concepts]) + criterion_y(y,labels.reshape(labels.size(0),n_concepts+1)[:,-1])
 
 			#  accumulate loss for metrics
 			acc_train_loss = loss.clone().detach() + acc_train_loss
 
 			dataset_counter_train = dataset_counter_train + outputs.size(0)
 
-			torch_accuracy_total_temp = torch.eq(labels.reshape(labels.size(0),n_concepts),torch.round(outputs))
+			torch_accuracy_total_temp = torch.eq(labels.reshape(labels.size(0),n_concepts+1)[:,0:n_concepts],torch.round(outputs))
 			torch_accuracy_total_temp = torch.sum(torch_accuracy_total_temp, dim=0)
 			torch_accuracy_total = torch.add(torch_accuracy_total, torch_accuracy_total_temp)
-
+			
+			torch_y_accuracy_total = torch_y_accuracy_total + criterion_y(y,labels.reshape(labels.size(0),n_concepts+1)[:,-1])
+			
 			loss.backward()
 
 			optimizer.step()
@@ -160,18 +176,19 @@ def train(model, n_epoch, train_loader, lr, n_concepts, test_loader = None, crit
 			for j, data in enumerate(test_loader):
 				inputs, labels = data
 
-				outputs = model(inputs.reshape(inputs.size(0),2))
+				outputs,y = model(inputs.reshape(inputs.size(0),4))
 
-				loss = criterion(outputs,labels.reshape(labels.size(0),n_concepts))
+				loss = criterion_c(outputs,labels.reshape(labels.size(0),n_concepts+1)[:,0:n_concepts]) + criterion_y(y,labels.reshape(labels.size(0),n_concepts+1)[:,-1])
 
 				acc_test_loss = loss + acc_test_loss
 
 				dataset_counter_test = dataset_counter_test + outputs.size(0)
 				
-				torch_accuracy_total_temp_test = torch.eq(labels.reshape(labels.size(0),n_concepts),torch.round(outputs))
+				torch_accuracy_total_temp_test = torch.eq(labels.reshape(labels.size(0),n_concepts+1)[:,0:n_concepts],torch.round(outputs))
 				torch_accuracy_total_temp_test = torch.sum(torch_accuracy_total_temp_test, dim=0)
 				torch_accuracy_total_test = torch.add(torch_accuracy_total_test, torch_accuracy_total_temp_test)
 
+				torch_y_accuracy_total_test = torch_y_accuracy_total_test + criterion_y(y,labels.reshape(labels.size(0),n_concepts+1)[:,-1])
 
 		model.train()
 
@@ -183,11 +200,11 @@ def train(model, n_epoch, train_loader, lr, n_concepts, test_loader = None, crit
 		print(acc_test_loss)
 		print("==Accuracy==")
 		accuracy_c = torch_accuracy_total/dataset_counter_train
-		print(torch_accuracy_total)
 		print(accuracy_c)
-		print(torch_accuracy_total_test)
+		print(torch_y_accuracy_total/dataset_counter_train)
 		accuracy_test_c = torch_accuracy_total_test/dataset_counter_test
 		print(accuracy_test_c)
+		print(torch_y_accuracy_total_test/dataset_counter_test)
 		all_epoch.append(epoch)
 		train_acc.append(accuracy_c)
 		test_acc.append(accuracy_test_c)
@@ -195,58 +212,10 @@ def train(model, n_epoch, train_loader, lr, n_concepts, test_loader = None, crit
 		test_loss.append(acc_test_loss)
 	return all_epoch, train_acc, test_acc, train_loss, test_loss
 
-ASSCipher = MLP([2, 128, 128, 1], nn.ReLU, nn.Sigmoid)
-ASSDataset = ASSDataset(createASSDatasetFromCSV('output_bin.csv', 16783.,14581.))
+BACKCipher = XtoCtoY(4,5)
+ASSDataset = ASSDataset(createASSDatasetFromCSV('IRSet_Norm_Goodness.csv'))
 trainSet, testSet, valSet = ASSDataset.get_splits()
-trainSetLoader = DataLoader(TensorDataset(torch.tensor([[o[0]] for o in trainSet]), torch.tensor([[o[1]] for o in trainSet], dtype=torch.float32)), batch_size = 2000, shuffle=True, generator = torch.Generator('cuda'))# batch max 12340
+trainSetLoader = DataLoader(TensorDataset(torch.tensor([[o[0]] for o in trainSet]), torch.tensor([[o[1]] for o in trainSet], dtype=torch.float32)), batch_size = 500, shuffle=True, generator = torch.Generator('cuda'))# batch max 12340
 testSetLoader = DataLoader(TensorDataset(torch.tensor([[o[0]] for o in testSet]), torch.tensor([[o[1]] for o in testSet], dtype=torch.float32)), batch_size = 500, shuffle=False, generator = torch.Generator('cuda'))
-epochs, train_acc, test_acc, train_loss, test_loss = train(ASSCipher, 900, trainSetLoader, 0.0008, 1, testSetLoader)
-torch.save(ASSCipher.state_dict(), 'model_save_bin.mdl')
-
-epochs = torch.tensor(epochs, device = 'cpu')
-train_loss = torch.tensor(train_loss, device = 'cpu')
-test_loss = torch.tensor(test_loss, device = 'cpu')
-train_acc = torch.tensor(torch.stack((train_acc)), device = 'cpu')
-test_acc = torch.tensor(torch.stack((test_acc)), device = 'cpu')
-
-plt.plot(epochs, train_loss, '-')
-plt.xlabel('# Epoch')
-plt.ylabel('Accumulated Loss over Train Dataset per Epoch')
-plt.title("Train Loss")
-
-plt.savefig('train_loss.jpg')
-plt.cla()
-
-plt.plot(epochs, train_acc, '-')
-plt.xlabel('# Epoch')
-plt.ylabel('Accuracy over Train Dataset per Epoch')
-plt.title("Train Accuracy")
-plt.savefig('train_accuracy.jpg')
-
-plt.cla()
-
-plt.plot(epochs, test_loss, '-')
-plt.xlabel('# Epoch')
-plt.ylabel('Accuracy over Train Dataset per Epoch')
-plt.title("Test Loss")
-plt.savefig('test_loss.jpg')
-
-plt.cla()
-
-plt.plot(epochs, test_acc, '-')
-plt.xlabel('# Epoch')
-plt.ylabel('Accuracy over Train Dataset per Epoch')
-plt.title("Test Accuracy")
-plt.savefig('test_Accuracy.jpg')
-
-plt.cla()
-
-plt.plot(epochs, train_loss, '-')
-plt.plot(epochs, test_loss, '-')
-plt.xlabel('# Epoch')
-plt.ylabel('Accuracy over Train Dataset per Epoch')
-plt.title("Loss")
-plt.savefig('combined_loss.jpg')
-plt.legend(['train','test'])
-
-plt.cla()
+epochs, train_acc, test_acc, train_loss, test_loss = train(BACKCipher, 7500, trainSetLoader, 0.0005, 5, testSetLoader)
+torch.save(BACKCipher.state_dict(), '4_7500_back_model_save_bin.mdl')
