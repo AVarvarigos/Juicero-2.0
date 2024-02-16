@@ -5,7 +5,7 @@
 ### Technology Overview
 <img src="/images/SystemDiagram.png" height = "400" />
 
-### Team Members:
+## Team Members:
 Anastasios Romanos Varvarigos (EIE): Embedded Development \
 Patrick Beart (EIE): Backend + Frontend\
 Chang Liu (EIE): Machine Learning \
