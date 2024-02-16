@@ -9,7 +9,7 @@
 Anastasios Romanos Varvarigos (EIE): Embedded Development \
 Patrick Beart (EIE): Backend + Frontend\
 Chang Liu (EIE): Machine Learning \
-Ege Dimiski (EEE): Electrical and Mechanical \
+Ege Dimiski (EEE): Electrical and Mechanical 
 
 ## Resources Utilized:
 https://github.com/edstott/ES-CW1 \
