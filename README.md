@@ -1,5 +1,7 @@
 # Juicero-2.0
 
+## PosChair (https://postondynamics.pa.trickbe.art/)
+
 ## Team Members:
 
 Anastasios Romanos Varvarigos (EIE) \
