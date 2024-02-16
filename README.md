@@ -3,7 +3,7 @@
 ## PosChair (https://postondynamics.pa.trickbe.art/)
 
 Technologies Diagram:
-<p align="center"> <img src="../images/SystemDiagram.png" height = "500" /> </p>
+<img src="../images/SystemDiagram.png" height = "500" /> 
 
 
 
