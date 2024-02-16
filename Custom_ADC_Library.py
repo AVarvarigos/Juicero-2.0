@@ -1,79 +1,25 @@
-print("hello world")
-print("terminal works")
-
-#Raspberry Pi Zero W clock is 1GHz->1ns per instruction->need delays
-#I2C COMMUNICATIONS CAN'T OCCUR CONCURRENTLY DUE TO SHARED BUS
-
-#Find better way to give delay to system rather than delay. Thread can be paused and restarted again by Timer???
-
-#HAVE FAST MODE AND HIGH SPEED MODE, HIGH SPEED MODE USES FASTER CLOCK
-#Duration of start condition (bus free time between START AND STOP) is 600n or 160n
-#Start clock 600 or 160ns after start condition (SDA pulse go up then down) 
-#After clock isn't driven anymore, send stop condition again only after 600-160ns
-#No hold time (can change clock just after SDA changed value)
-#Setup time is 100-10 ns (data not change for 100ns after clock rose)
-#min width of low period is 1300-160 ns and min width of high period is 600-60
-#clock fall time is 300-160ns and rise time is same min. CLOCK OF MASTER MUST OBEY THAT
-
-
-
-
-
-
-
-
-#removed other child
-#changed from adafruit i2c to smbus2 direct for more control
-#add read then write
-#add auto gain adjuster??? (if have time, do after ideal operation calling)
-#activated RDY pin for safety and protection against overflow
-#NO CONTINUOUS AS THE SCHEME DEVISED HAS MORE SAMPLES TIME ALIGNED IF USE SINGLE SHOT (assume 33ms enough time for ADC to be done)
-
-
-
-
-
-
-
-
 import time
 import smbus2
 
-
 # Register and other configuration values:
-ADS1x15_DEFAULT_ADDRESS        = 0x48
-ADS1x15_POINTER_CONVERSION     = 0x00
-ADS1x15_POINTER_CONFIG         = 0x01
-ADS1x15_POINTER_LOW_THRESHOLD  = 0x02
-ADS1x15_POINTER_HIGH_THRESHOLD = 0x03
-ADS1x15_CONFIG_OS_SINGLE       = 0x8000
-ADS1x15_CONFIG_MUX_OFFSET      = 12
-
-# Maping of gain values to config register values. System designed around 16 bits and we need high resolution for bottom so use ADS1115
-ADS1x15_CONFIG_GAIN = {
-    2/3: 0x0000,
-    1:   0x0200,
-    2:   0x0400,
-    4:   0x0600,
-    8:   0x0800,
-    16:  0x0A00
-}
-ADS1x15_CONFIG_MODE_CONTINUOUS  = 0x0000
-ADS1x15_CONFIG_MODE_SINGLE      = 0x0100
-# Mapping of data/sample rate to config register values for ADS1015 (faster).
-ADS1015_CONFIG_DR = {
-    128:   0x0000,
-    250:   0x0020,
-    490:   0x0040,
-    920:   0x0060,
-    1600:  0x0080,
-    2400:  0x00A0,
-    3300:  0x00C0
-}
+DEFAULT_SLAVE_ADDRESS           = 0x48 #Slave address byte. Value when ADDR pin is GND
+                                      #One of the following bytes are sent after the slave address byte
+CONVERSION_REGISTER_ADDRESS     = 0x00 #Store sampled result in 2 unsigned bytes. Needs conversion to signed. 
+CONFIG_REGISTER_ADDRESS         = 0x01 #write all configuration data there
+LOW_THRESHOLD_REGISTER_ADDRESS  = 0x02 #set lo to less than 2^15 (MSB is zero) to activate ALERT
+HIGH_THRESHOLD_REGISTER_ADDRESS = 0x03 #set to 8xxx hex to activate ALERT
+SINGLESHOT_POWERUP_FIELD        = 0x8000  #This contains empty config data except for MSB=1 to power the device up. The config bitstream would be built from left to right.
+CHANNEL_FIELD_OFFSET            = 12   #start of mux channel field in 16 bit (2 byte) config data
+SINGLESHOT_SET_BYTES            = 0x0100
+GAIN                            = 4    #default gain
+CONFIG_CURRENT                  = 0x00   #configuration setting of device
+RDY_ACTIVE_HIGH                 = 0x0000 #ADAFRUIT DID ACTIVE EDGE, I DID ACTIVE LOAD TO TURN ALERT TO SHOW AVAILABILITY, CHANGE BACK IF NOT WORK!!
+SETUP_COMP_RDY                  = 0x0000 #write 00 to COMP_QUE and Thresholds to activate RDY
+ADDRESS_CURRENT                 = DEFAULT_SLAVE_ADDRESS
 
 
-# Mapping of data/sample rate to config register values for ADS1115 (slower).
-ADS1115_CONFIG_DR = {
+# Maps desired data rate (SPS) to needed configuration register bit setting. 128 is default
+DATA_RATE_CONFIG_BYTES = {
     8:    0x0000,
     16:   0x0020,
     32:   0x0040,
@@ -81,97 +27,65 @@ ADS1115_CONFIG_DR = {
     128:  0x0080,
     250:  0x00A0,
     475:  0x00C0,
-    860:  0x00E0
 }
 
-#delete the comparator operations
-ADS1x15_CONFIG_COMP_WINDOW      = 0x0010
-ADS1x15_CONFIG_COMP_ACTIVE_HIGH = 0x0008
-ADS1x15_CONFIG_COMP_LATCHING    = 0x0004
-ADS1x15_CONFIG_COMP_QUE = {
-    1: 0x0000,
-    2: 0x0001,
-    4: 0x0002
+
+# Maps desired ADC gain to needed configuration register bit setting. 4 is default and response oversaturate after 8
+ADS1x15_CONFIG_GAIN = { 
+    2/3: 0x0000, #000 0
+    1:   0x0200, #001 0
+    2:   0x0400, #010 0
+    4:   0x0600, #011 0
+    8:   0x0800, #100 0
+    16:  0x0A00  #101 0    LSB is Mode pin, written later during operation
 }
-ADS1x15_CONFIG_COMP_QUE_DISABLE = 0x0003
 
 
-'''
-Unique implementation:
+class flex_adc(object):
 
--Make continuous readings 
--get rid of objective programming
--change I2C to smbus I2C
--Delete comparator operations
--INTEGRATE THE ALERT PIN TO SYSTEM TO SAVE TIME!!!, ATTEMPT READ IF DATA THERE ELSE SKIP SAMPLE
--ADD AUTOMATIC CONFIGURATOR WHERE WE USE SINGLE SHOTS TO READ GAIN AND MODIFY IT UNTIL STOP OVERSHOOTING THE CHANNEL.
--ALSO CALIBRATE DATA RATE AUTOMATICALLY SOMEHOW???
--Do 2 bytes to single sample conversion in one method
--Put method to collect data from all channels at once AND OPTIMIZED?
--software I2C channel???
--DELETE ALL INSTANCES OF ADAFRUIT FROM JUICERO TO HIDE COPY PASTE!!!!!
+    #From right to left make OS, mux channel, gain, mode, data rate, and comp fields
+    def __init__(self, gain_set=4, data_rate=128, address=DEFAULT_SLAVE_ADDRESS, i2c=None, **kwargs):
 
--ADD USE OF ALERT SIGNALS TO TELL PROGRAM IF DATA READER IS READY. LINK THAT TO THE GPIO INTERRUPT!!!!
--Change I2C to send less data and MAKE CONTINUOUS READS TO GET DATA FROM ALL CHANNELS
+        bus = smbus2.SMBus(1)
+        self.address=address
 
+        #this will power on the chip and the config's other fields will be filled by other data
+        config = SINGLESHOT_POWERUP_FIELD  
+        # Specify mux value.
+        config |= (0x04 & 0x07) << CHANNEL_FIELD_OFFSET #MUX field starts after 12. Default samples channel 0
 
--IMRPOVE TIMING OF TOF LIBRARY?
--IMPLEMENT MAGNETOMETER?
--Integrate high speed mode conditions and commands??
--How to program what channel to read?
--IMPLEMENT CONTINUOUS READ TO READ ALL ADC AT ONCE
--ACTIVATE HIGH SPEED MODE IN STARTUP WITH COMMAND
+        # Validate the passed in gain and then set it in the config.
+        if gain_set not in ADS1x15_CONFIG_GAIN:
+            raise ValueError('Gain must be one of: 2/3, 1, 2, 4, 8, 16')
+        config |= ADS1x15_CONFIG_GAIN[gain_set]
+        # Set the mode to single-shot
+        config |= SINGLESHOT_SET_BYTES
+        # Set the data rate 
+        if data_rate is None:
+            data_rate = self._data_rate_default() #data rate set to default. Only continuous mode utilizes data rate so not too critical
+        config |= self._data_rate_config(data_rate) 
+        config |= SETUP_COMP_RDY  # DON'T DISABLE QUE BUT SET TO 00 01 10 AND THRESHOLDS TO CERTAIN VALUES TI ACTIVATE ALERT/RDY
+        # Send the config value to start the ADC conversion.
+        # Explicitly break the 16-bit value down to a big endian pair of bytes.
 
-*set address to read first, then keep reading the conversion register
-*If read the config 16 bit bitsreatm: MSB 0 mean device is doing conversion and reading 1 mean conversion is done
-*CONFIG sets the input channel, SO MEAN CAN'T DO CONTINUOUS FOR ALL CHANNELS??? BİTS 14-12
-000 : AINP = AIN0 and AINN = AIN1 (default) 001 : AINP = AIN0 and AINN = AIN3
-010 : AINP = AIN1 and AINN = AIN3
-011 : AINP = AIN2 and AINN = AIN3
-100 : AINP = AIN0 and AINN = GND 101 : AINP = AIN1 and AINN = GND 110 : AINP = AIN2 and AINN = GND 111 : AINP = AIN3 and AINN = GND
-*bits 4-0 set comparator settings. don't touch . USE COMPARATOR TO IMMEDIATELY SEE WHEN THERE'S NO USED???
-*Set Hi-thres and Lo-thres to 8xxx and 8xxx respectively. Set to RDY mode to get OS bit in single conversion or get pulse train in continuous ate alert!!!!
+        write_msg=smbus2.i2c_msg.write(address, [CONFIG_REGISTER_ADDRESS, (config >> 8) & 0xFF, config & 0xFF])
+        bus.i2c_rdwr(write_msg)
+        #smbus2.bus.write_i2c_block_data(address, 0, [ADS1x15_POINTER_CONFIG, (config >> 8) & 0xFF, config & 0xFF])  LOW LEVEL ALTERNATIVE
 
 
+        #Write hi_thres to 0x8000 and lo thres MSB to 0 to set RDY pin as conversion ready
+        write_msg=smbus2.i2c_msg.write(address, [HIGH_THRESHOLD_REGISTER_ADDRESS, 0x80, 0x00])
+        bus.i2c_rdwr(write_msg)
+
+        write_msg=smbus2.i2c_msg.write(address, [LOW_THRESHOLD_REGISTER_ADDRESS, 0x07, 0xFF])
+        bus.i2c_rdwr(write_msg)
 
 
-Set the most-significant bit of the Hi_thresh register to 1 and the most-significant bit of Lo_thresh register to 0 to enable the pin as a conversion ready pin. 
-The COMP_POL bit continues to function as expected. Set the COMP_QUE[1:0] bits to any 2-bit value other than 11 to keep the ALERT/RDY pin enabled, and allow the conversion ready signal to appear at the ALERT/RDY pin output. 
-The COMP_MODE and COMP_LAT bits no longer control any function. When configured as a conversion ready pin, ALERT/RDY continues to require a pullup resistor. 
-The ADS111x provide an approximately 8-μs conversion ready pulse on the ALERT/RDY pin at the end of each conversion in continuous-conversion mode, as shown in Figure 29. In single-shot mode
-
-If not faster than 8us program should poll for the alert pin. BUT BEST IF USE ALERT SIGNAL TO CALL UPON READS
-
-
-HAVE TO CHANGE CONFIG TO CHANGE THE CHANNEL READ, THERE'S ONLY ONE INPUT CAPACITOR AND CHANNELS GET MUXED TO THAT. 
-SO NOT POSSIBLE TO CONTINIOUSLY READ ALL 4 CHANNELS. HAVE TO CHANGE CONFIG TO CHANGE CHANNEL
-
-1001000 is address when set ADDR pin to GND
-
-'''
-
-
-class ADS1115(object):
-    """Base functionality for ADS1x15 analog to digital converters."""
-
-    def __init__(self, address=ADS1x15_DEFAULT_ADDRESS, i2c=None, **kwargs):
-
-        #REPLACE WITH SMBUS2 I2C OPERATIONS
-
-        if i2c is None:
-            import Adafruit_GPIO.I2C as I2C
-            i2c = I2C
-        self._device = i2c.get_i2c_device(address, **kwargs)
-
-    def _data_rate_default(self):
+    def get_default_data_rate(self):
         return 128
 
-    def _data_rate_config(self, data_rate):
-        if data_rate not in ADS1115_CONFIG_DR:
-            raise ValueError('Data rate must be one of: 8, 16, 32, 64, 128, 250, 475, 860')
-        return ADS1115_CONFIG_DR[data_rate]
 
-    def _conversion_value(self, low, high):
+    def bytes2signed(self, low, high):
          #contacts the received MS byte and LS bytes to 16 bit number then make it signed by removing by subtraction 2*MSB
         # Convert to 16-bit signed value.
         value = ((high & 0xFF) << 8) | (low & 0xFF)
@@ -180,113 +94,60 @@ class ADS1115(object):
             value -= 1 << 16
         return value
 
+    #Read the sample stored in the conversion register of the ADC. 
+    #Need to first write to the address pointer register to set the chip to transmit conversion register's byten upon read call
+    def get_sample(self, channel, data_rate=None): 
 
-    #DO CONFIGURATION AT THE STARTUP, REMOVE SLEEP, PUT CONVERSION RESULT TO SAME METHOD, REPLACE READLIST WITH SMBUS METHOD!!!
+        bus = smbus2.SMBus(1)
+        assert 0 <= channel <= 1, 'Channel must be a value within 0-1! Not using channels 2 and 3'
 
-    def _read(self, mux, gain, data_rate, mode):
-        """Perform an ADC read with the provided mux, gain, data_rate, and mode
-        values.  Returns the signed integer result of the read.
-        """
+        register_access = smbus2.i2c_msg.write(ADDRESS_CURRENT, [CONVERSION_REGISTER_ADDRESS])
+        read_result = smbus2.i2c_msg.read(ADDRESS_CURRENT, 2)
+        bus.i2c_rdwr(register_access, read_result)
+        #or one read then one write
 
-        config = ADS1x15_CONFIG_OS_SINGLE  # Go out of power-down mode for conversion.
-        # Specify mux value.
-        config |= (mux & 0x07) << ADS1x15_CONFIG_MUX_OFFSET
-        # Validate the passed in gain and then set it in the config.
-        if gain not in ADS1x15_CONFIG_GAIN:
-            raise ValueError('Gain must be one of: 2/3, 1, 2, 4, 8, 16')
-        config |= ADS1x15_CONFIG_GAIN[gain]
-        # Set the mode (continuous or single shot).
-        config |= mode
-        # Get the default data rate if none is specified (default differs between
-        # ADS1015 and ADS1115).
-        if data_rate is None:
-            data_rate = self._data_rate_default()
-        # Set the data rate (this is controlled by the subclass as it differs
-        # between ADS1015 and ADS1115).
-        config |= self._data_rate_config(data_rate)
-        config |= ADS1x15_CONFIG_COMP_QUE_DISABLE  # Disble comparator mode.
-        # Send the config value to start the ADC conversion.
-        # Explicitly break the 16-bit value down to a big endian pair of bytes.
-        self._device.writeList(ADS1x15_POINTER_CONFIG, [(config >> 8) & 0xFF, config & 0xFF])
-        # Wait for the ADC sample to finish based on the sample rate plus a
-        # small offset to be sure (0.1 millisecond).
-        time.sleep(1.0/data_rate+0.0001)
-        # Retrieve the result.
-        result = self._device.readList(ADS1x15_POINTER_CONVERSION, 2)
-        return self._conversion_value(result[1], result[0])
-    
+        return bytes2signed(read_result[0], read_result[1])
 
-    def read_adc(self, channel, gain=1, data_rate=None):
-        """Read a single ADC channel and return the ADC value as a signed integer
-        result.  Channel must be a value within 0-3.
-        """
-        assert 0 <= channel <= 3, 'Channel must be a value within 0-3!'
+
+
+    #Request a single shot sample by writing the config file an OS=1 and MUX=desired channel
+    def request_sample(self, channel, data_rate=None):  #write to config to demand data.
+
+        bus = smbus2.SMBus(1)
+
+        assert 0 <= channel <= 1, 'Channel must be a value within 0-1! Not using channels 2 and 3'
         # Perform a single shot read and set the mux value to the channel plus
         # the highest bit (bit 3) set.
-        return self._read(channel + 0x04, gain, data_rate, ADS1x15_CONFIG_MODE_SINGLE)
-
-    def start_adc(self, channel, gain=1, data_rate=None): #do this to bypass read times and keep value ready at hand
-        """Start continuous ADC conversions on the specified channel (0-3). Will
-        return an initial conversion result, then call the get_last_result()
-        function to read the most recent conversion result. Call stop_adc() to
-        stop conversions.
-        """
-        assert 0 <= channel <= 3, 'Channel must be a value within 0-3!'
-        # Start continuous reads and set the mux value to the channel plus
-        # the highest bit (bit 3) set.
-        return self._read(channel + 0x04, gain, data_rate, ADS1x15_CONFIG_MODE_CONTINUOUS)
-
-    def start_adc_difference(self, differential, gain=1, data_rate=None): 
-        #KEEP THIS
-        """Start continuous ADC conversions between two ADC channels. Differential
-        must be one of:
-          - 0 = Channel 0 minus channel 1
-          - 1 = Channel 0 minus channel 3
-          - 2 = Channel 1 minus channel 3
-          - 3 = Channel 2 minus channel 3
-        Will return an initial conversion result, then call the get_last_result()
-        function continuously to read the most recent conversion result.  Call
-        stop_adc() to stop conversions.
-        """
-        assert 0 <= differential <= 3, 'Differential must be a value within 0-3!'
-        # Perform a single shot read using the provided differential value
-        # as the mux value (which will enable differential mode).
-        return self._read(differential, gain, data_rate, ADS1x15_CONFIG_MODE_CONTINUOUS)
 
 
-    def stop_adc(self):
-        """Stop all continuous ADC conversions (either normal or difference mode).
-        """
-        # Set the config register to its default value of 0x8583 to stop
-        # continuous conversions.
-        config = 0x8583
-        self._device.writeList(ADS1x15_POINTER_CONFIG, [(config >> 8) & 0xFF, config & 0xFF])
-
-    def get_last_result(self):   #PUT THIS
-        """Read the last conversion result when in continuous conversion mode.
-        Will return a signed integer value.
-        """
-        # Retrieve the conversion register value, convert to a signed int, and
-        # return it.
-
-        result = self._device.readList(ADS1x15_POINTER_CONVERSION, 2)
-        return self._conversion_value(result[1], result[0])
+        mux=channel + 0x04 #+4 present to get to 1xx where single channel reads are done
 
 
-class ADS1115(ADS1x15):
-    """ADS1115 16-bit analog to digital converter instance."""
+        # Erased the MUX field of config then set it to the new MUX
+        config = ( config & ( 0x8FFF ) ) | ( (mux & 0x07) << CHANNEL_FIELD_OFFSET ) #MUX field starts after 12
+        # Validate the passed in gain and then set it in the config.
+        
+    
+        #after sending the pointer, have immediate access to the desired pointed register and can write it
+        
+        write_msg=smbus2.i2c_msg.write(ADDRESS_CURRENT, [CONFIG_REGISTER_ADDRESS, (config >> 8) & 0xFF, config & 0xFF])
+        bus.i2c_rdwr(write_msg)
+        #smbus2.bus.write_i2c_block_data(address, 0, [ADS1x15_POINTER_CONFIG, (config >> 8) & 0xFF, config & 0xFF])
 
-    def __init__(self, *args, **kwargs):
-        super(ADS1115, self).__init__(*args, **kwargs)
 
-    def _conversion_value(self, low, high): 
-        #contacts the received MS byte and LS bytes to 16 bit number then make it signed by removing by subtraction 2*MSB
-        # Convert to 16-bit signed value.
-        value = ((high & 0xFF) << 8) | (low & 0xFF)
-        # Check for sign bit and turn into a negative value if set.
-        if value & 0x8000 != 0:
-            value -= 1 << 16
-        return value
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
