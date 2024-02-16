@@ -12,11 +12,11 @@ Chang Liu (EIE): Machine Learning \
 Ege Dimiski (EEE): Electrical and Mechanical \
 
 ## Resources Utilized:
-Embedded Systems Lectures \ 
 https://github.com/edstott/ES-CW1 \
 https://www.hivemq.com/blog/mqtt-essentials-part-4-mqtt-publish-subscribe-unsubscribe/ \
 https://www.st.com/resource/en/datasheet/vl53l0x.pdf \ 
-https://cdn-shop.adafruit.com/datasheets/ads1115.pdf
+https://cdn-shop.adafruit.com/datasheets/ads1115.pdf \
+Embedded Systems Lectures 
 
 
 
