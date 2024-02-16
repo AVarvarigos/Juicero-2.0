@@ -2,6 +2,7 @@
 
 ## PosChair WebSite (https://postondynamics.pa.trickbe.art/)
 ## PosChair Youtube Commercial (https://www.youtube.com/watch?v=f4E4Ga_9iSI)
+## Technology Overview (<img src="../images/SystemDiagram.png" height = "10" />)
 
 ## Team Members:
 Anastasios Romanos Varvarigos (EIE) \
