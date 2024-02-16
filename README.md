@@ -2,7 +2,7 @@
 
 ## Team Members:
 
-Anastasios Romanos Varvarigos (EIE) //
-Patrick Beart (EIE) //
-Chang Liu (EIE) //
-Ege Dimiski (EEE) 
+Anastasios Romanos Varvarigos (EIE) \
+Patrick Beart (EIE) \
+Chang Liu (EIE) \
+Ege Dimiski (EEE) \ 
