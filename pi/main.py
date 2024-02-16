@@ -1,11 +1,8 @@
 import time #ADDESSES OF TOF NOT VOTTRVT FIXED FIRST NEED TO CONNECT 2ND FIRST TO FIX ADDRESS
 import requests
-# Import the ADS1x15 module.
 import Custom_ADC_Library
 import VL53L0X
 import RPi.GPIO as GPIO
-#import torch
-#import torch.nn as nn
 
 
 """
@@ -137,42 +134,28 @@ tof2.open()
 '''
 
 time.sleep(0.30)
-
 tof.start_ranging(VL53L0X.Vl53l0xAccuracyMode.BETTER)
-
 tof1.start_ranging(VL53L0X.Vl53l0xAccuracyMode.BETTER)
-
 tof2.start_ranging(VL53L0X.Vl53l0xAccuracyMode.BETTER)
-
 times=[tof.get_timing(), tof1.get_timing(), tof2.get_timing()]
-
 times_max=max(times)
-
 print("Timing %d ms" % (times_max/1000))
-
 times_max=sum(times)
 print("Total timing %d ms" % (times_max/1000))
     #buffers
 sampler_buffer=[]
 ML_buffer=[]
 SAMPLER_BUFFER_LENGTH=500 #Optimize lengths to save space but should be large enough to not be overflown
-
 ML_BUFFER_LENGTH=500 
 FLEX_AMOUNT=2
-
 IR_AMOUNT=2
-
 GAIN = [4, 4] #8 gain CAUSE OVERSHOOT. DO 4 OR 2. ASK CHANG ON HIS SENSOR SETTINGS???
-    
 max_sit_time=-1 #represent time in minutes or hours? A way to ensure timer() won't overflow!
-
 print('Reading ADS1x15 and VL53L0X values, press Ctrl-C to quit...')
 # Print nice channel column headers
 #print('| {0:>6} | {1:>6} |'.format(*range(2)))
 print('-' * 37)
-
 adc_values = [0]*2
-
 distance=[0]*3
 
 #LOOP(). Make this an interrupt or put with ML in series
