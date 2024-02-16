@@ -6,7 +6,8 @@
 <img src="/images/SystemDiagram.png" height = "400" />
 
 ### Team Members:
-Anastasios Romanos Varvarigos (EIE) \
-Patrick Beart (EIE) \
-Chang Liu (EIE) \
-Ege Dimiski (EEE) 
+Anastasios Romanos Varvarigos (EIE): Embedded Development \
+Patrick Beart (EIE): Backend + Frontend\
+Chang Liu (EIE): Machine Learning \
+Ege Dimiski (EEE): Electrical and Mechanical
+
